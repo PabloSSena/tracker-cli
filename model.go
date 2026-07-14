@@ -4,6 +4,7 @@ import (
 	"log"
 	"time"
 
+	"github.com/atotto/clipboard"
 	"github.com/charmbracelet/bubbles/textarea"
 	tea "github.com/charmbracelet/bubbletea"
 )
@@ -28,6 +29,9 @@ type savedMsg struct {
 	err error
 }
 
+// clearCopiedMsg força um redraw para o aviso "copiado!" sumir sozinho.
+type clearCopiedMsg struct{}
+
 type model struct {
 	state      uint
 	store      *Store
@@ -42,6 +46,7 @@ type model struct {
 	savedAt   time.Time // para exibir "salvo às HH:MM:SS"
 	saving    bool
 	saveErr   error
+	copiedAt  time.Time // para exibir "copiado!" após Ctrl+Y
 
 	width  int
 	height int
@@ -55,7 +60,8 @@ func newModel(store *Store) model {
 
 	ta := textarea.New()
 	ta.Placeholder = "Escreva sua anotação do dia..."
-	ta.CharLimit = 0 // sem limite
+	ta.CharLimit = 0            // sem limite
+	ta.ShowLineNumbers = true   // mostra os números de linha na margem
 
 	return model{
 		state:  listView,
@@ -141,6 +147,10 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 
+	case clearCopiedMsg:
+		// nada a fazer além de disparar o redraw que esconde o "copiado!".
+		return m, nil
+
 	case autoSaveMsg:
 		// Só salva se este for o tick mais recente (usuário parou de digitar)
 		// ou se estourou o max-wait (throttle) mesmo ainda digitando.
@@ -196,6 +206,18 @@ func (m model) updateEditor(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// flush síncrono antes de sair, garantia anti-perda.
 			_ = m.store.UpsertDay(m.currentDay, m.editor.Value())
 			return m, tea.Quit
+		case "ctrl+y":
+			// copia o conteúdo puro da nota para o clipboard — sem números
+			// de linha nem margem, ao contrário da seleção do terminal.
+			if err := clipboard.WriteAll(m.editor.Value()); err != nil {
+				log.Printf("Erro ao copiar: %v", err)
+				return m, nil
+			}
+			m.copiedAt = time.Now()
+			// agenda um redraw para o aviso "copiado!" sumir sozinho.
+			return m, tea.Tick(2*time.Second, func(time.Time) tea.Msg {
+				return clearCopiedMsg{}
+			})
 		case "esc":
 			// flush síncrono e volta para a lista, recarregando a listagem.
 			_ = m.store.UpsertDay(m.currentDay, m.editor.Value())

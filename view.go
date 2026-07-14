@@ -99,6 +99,8 @@ func (m model) editorViewRender() string {
 
 	status := "salvamento automático"
 	switch {
+	case time.Since(m.copiedAt) < 2*time.Second:
+		status = savedStyle.Render("copiado!")
 	case m.saveErr != nil:
 		status = savingStyle.Render("erro ao salvar!")
 	case m.saving:
@@ -106,7 +108,7 @@ func (m model) editorViewRender() string {
 	case !m.savedAt.IsZero():
 		status = savedStyle.Render("salvo às " + m.savedAt.Format("15:04:05"))
 	}
-	b.WriteString(helpStyle.Render(fmt.Sprintf("esc voltar · %s", status)))
+	b.WriteString(helpStyle.Render(fmt.Sprintf("esc voltar · ctrl+y copiar · %s", status)))
 	return b.String()
 }
 
