@@ -39,37 +39,52 @@ var (
 
 	savingStyle = lipgloss.NewStyle().
 			Foreground(lipgloss.Color("214"))
+
+	activeTabStyle = lipgloss.NewStyle().
+			Bold(true).
+			Foreground(lipgloss.Color("205"))
+
+	inactiveTabStyle = lipgloss.NewStyle().
+				Foreground(lipgloss.Color("241"))
+
+	pinTitleStyle = lipgloss.NewStyle().Bold(true)
 )
 
 func (m model) View() string {
 	switch m.state {
 	case editorView:
 		return m.editorViewRender()
+	case pinnedView:
+		return m.pinnedViewRender()
+	case promptView:
+		return m.promptViewRender()
 	default:
 		return m.listViewRender()
 	}
 }
 
-// prettyDay converte YYYY-MM-DD para uma exibição amigável, marcando "hoje".
+// prettyDay turns YYYY-MM-DD into a friendly label, marking "today".
 func prettyDay(day string) string {
 	t, err := time.Parse("2006-01-02", day)
 	if err != nil {
 		return day
 	}
-	label := t.Format("02/01/2006 (Mon)")
+	label := t.Format("Jan 02, 2006 (Mon)")
 	if day == time.Now().Format("2006-01-02") {
-		return label + " · hoje"
+		return label + " · today"
 	}
 	return label
 }
 
 func (m model) listViewRender() string {
 	var b strings.Builder
-	b.WriteString(titleStyle.Render("📓 Tracker — suas anotações"))
+	b.WriteString(titleStyle.Render("📓 Tracker — your notes"))
 	b.WriteString("\n")
+	b.WriteString(m.tabsRender())
+	b.WriteString("\n\n")
 
 	if len(m.notes) == 0 {
-		b.WriteString(emptyStyle.Render("Nenhuma anotação ainda — pressione `n` para começar a de hoje."))
+		b.WriteString(emptyStyle.Render("No notes yet — press `n` to start today's."))
 		b.WriteString("\n")
 	} else {
 		for i, note := range m.notes {
@@ -86,29 +101,96 @@ func (m model) listViewRender() string {
 		}
 	}
 
-	b.WriteString(helpStyle.Render("↑/↓ navegar · enter abrir · n nova (hoje) · ctrl+c sair"))
+	b.WriteString(helpStyle.Render("↑/↓ navigate · enter open · n new (today) · p pin · tab pinned · ctrl+c quit"))
 	return b.String()
 }
 
 func (m model) editorViewRender() string {
 	var b strings.Builder
-	b.WriteString(titleStyle.Render("✍️  " + prettyDay(m.currentDay)))
+	header := "✍️  " + prettyDay(m.currentDay)
+	if m.editingPinned != 0 {
+		header = "📌 " + m.pinnedTitle
+	}
+	b.WriteString(titleStyle.Render(header))
 	b.WriteString("\n")
 	b.WriteString(m.editor.View())
 	b.WriteString("\n")
 
-	status := "salvamento automático"
+	status := "autosave"
 	switch {
 	case time.Since(m.copiedAt) < 2*time.Second:
-		status = savedStyle.Render("copiado!")
+		status = savedStyle.Render("copied!")
 	case m.saveErr != nil:
-		status = savingStyle.Render("erro ao salvar!")
+		status = savingStyle.Render("save failed!")
 	case m.saving:
-		status = savingStyle.Render("salvando…")
+		status = savingStyle.Render("saving…")
 	case !m.savedAt.IsZero():
-		status = savedStyle.Render("salvo às " + m.savedAt.Format("15:04:05"))
+		status = savedStyle.Render("saved at " + m.savedAt.Format("15:04:05"))
 	}
-	b.WriteString(helpStyle.Render(fmt.Sprintf("esc voltar · ctrl+y copiar · %s", status)))
+	b.WriteString(helpStyle.Render(fmt.Sprintf("esc back · ctrl+y copy · %s", status)))
+	return b.String()
+}
+
+// tabsRender draws the tabs; the pinned count is always visible.
+func (m model) tabsRender() string {
+	days, pins := inactiveTabStyle, inactiveTabStyle
+	if m.state == pinnedView {
+		pins = activeTabStyle
+	} else {
+		days = activeTabStyle
+	}
+	return days.Render("Days") + inactiveTabStyle.Render("  ·  ") +
+		pins.Render(fmt.Sprintf("📌 %d pinned", len(m.pinned)))
+}
+
+func (m model) pinnedViewRender() string {
+	var b strings.Builder
+	b.WriteString(titleStyle.Render("📓 Tracker — your notes"))
+	b.WriteString("\n")
+	b.WriteString(m.tabsRender())
+	b.WriteString("\n\n")
+
+	if len(m.pinned) == 0 {
+		b.WriteString(emptyStyle.Render("No pinned notes — press `n` to create one."))
+		b.WriteString("\n")
+	} else {
+		for i, p := range m.pinned {
+			if i == m.pinnedIndex {
+				line := truncate(p.Title, 40)
+				if preview := p.Preview(); preview != "" {
+					line += "  " + truncate(preview, 50)
+				}
+				b.WriteString(selectedStyle.Render("› " + line))
+			} else {
+				line := pinTitleStyle.Render(truncate(p.Title, 40))
+				if preview := p.Preview(); preview != "" {
+					line += "  " + previewStyle.Render(truncate(preview, 50))
+				}
+				b.WriteString(itemStyle.Render("  " + line))
+			}
+			b.WriteString("\n")
+		}
+	}
+
+	help := "↑/↓ navigate · enter open · n new · r rename · d delete · tab days · ctrl+c quit"
+	if m.confirmDelete && len(m.pinned) > 0 {
+		help = savingStyle.Render(fmt.Sprintf("delete \"%s\"? (y/n)", m.pinned[m.pinnedIndex].Title))
+	}
+	b.WriteString(helpStyle.Render(help))
+	return b.String()
+}
+
+func (m model) promptViewRender() string {
+	label := "📌 Pinned note title:"
+	if m.promptMode == promptRename {
+		label = "📌 Rename pinned note:"
+	}
+	var b strings.Builder
+	b.WriteString(titleStyle.Render(label))
+	b.WriteString("\n")
+	b.WriteString(m.prompt.View())
+	b.WriteString("\n")
+	b.WriteString(helpStyle.Render("enter confirm · esc cancel"))
 	return b.String()
 }
 

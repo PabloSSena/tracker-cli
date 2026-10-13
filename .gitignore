@@ -1,0 +1,9 @@
+# compiled binaries
+/dist/
+/tracker
+/tracker.exe
+*.exe
+*.exe~
+
+# local database (in case someone runs with HOME inside the repo)
+*.db
