@@ -26,6 +26,12 @@
 - 🪶 **Single binary** — pure Go, no CGO, no runtime dependencies
 - 🗄️ **Local-first** — everything lives in `~/.tracker/notes.db`
 
+### Prerequisites
+
+- [Go](https://go.dev/dl/) **1.26.2** or newer (check with `go version`)
+- `make`
+- Make sure `$(go env GOPATH)/bin` is on your `PATH` so the `tracker` command is found after installing
+
 ## 🚀 Install
 
 ```bash
